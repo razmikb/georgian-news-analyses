@@ -1,0 +1,31 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Working docs & agent config — local only, not published in the public repo
+CLAUDE.md
+PLAN.md
+PROGRESS.md
+WORKFLOW.md
+DESIGN.md
+overall-goal.md
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+.vercel/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
