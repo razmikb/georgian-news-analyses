@@ -36,12 +36,16 @@ class SourceResult:
     found: int = 0
     added: int = 0
     error: str | None = None
+    dry_run: bool = False
 
     def line(self) -> str:
         if self.error:
             return f"  {self.name}: FAILED — {self.error}"
         if self.found == 0:
             return f"  {self.name}: 0 headlines found — feed is probably broken, needs a look"
+        if self.dry_run:
+            # Nothing was written, so we genuinely don't know what is new.
+            return f"  {self.name}: {self.found} headlines found (nothing written)"
         already = self.found - self.added
         return (
             f"  {self.name}: {self.found} headlines found, {self.added} new, {already} already had"
@@ -50,7 +54,7 @@ class SourceResult:
 
 def ingest_source(source: dict, *, dry_run: bool) -> SourceResult:
     """Fetch, parse and store one source. Raises nothing — errors land in the result."""
-    result = SourceResult(name=source["name_en"])
+    result = SourceResult(name=source["name_en"], dry_run=dry_run)
     try:
         articles = parse_feed(fetch(source["feed_url"]), source["id"])
         result.found = len(articles)

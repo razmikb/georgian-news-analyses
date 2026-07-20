@@ -1,0 +1,51 @@
+# Fetches headlines from every RSS source on a schedule and writes them to Supabase.
+#
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+# The service-role key is a write key — it lives only here and in the local .env.
+#
+# A red run means at least one source failed or returned nothing, and GitHub emails us.
+
+name: Ingest
+
+on:
+  schedule:
+    # Every 2 hours. GitHub queues cron runs on shared capacity, so the actual
+    # start time drifts by several minutes — fine for a news feed.
+    - cron: "0 */2 * * *"
+  # Lets us trigger a run by hand from the Actions tab.
+  workflow_dispatch:
+
+# If a run is somehow still going when the next one fires, let it finish rather
+# than running two writers at once.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Ingest headlines
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        # `tee` puts the plain-language run summary on the run's front page in the
+        # Actions tab, so checking on it never means reading through a log.
+        run: |
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python -m pipeline.run | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $status
