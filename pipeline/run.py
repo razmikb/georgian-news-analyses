@@ -12,7 +12,7 @@ import argparse
 import sys
 from dataclasses import dataclass
 
-from pipeline import db
+from pipeline import db, scrape
 from pipeline.fetch import fetch
 from pipeline.rss import parse_feed
 
@@ -52,11 +52,29 @@ class SourceResult:
         )
 
 
+def _is_ingestable(source: dict) -> bool:
+    """True if we know how to fetch this source — an RSS feed or a registered scraper."""
+    return bool(source.get("feed_url")) or source["slug"] in scrape.SCRAPERS
+
+
+def _fetch_and_parse(source: dict) -> list:
+    """Ingest one source by its right path: HTML scraper if registered, else RSS feed.
+
+    A scraped source (Imedi, Formula) is fetched from its listing page and parsed with
+    its per-site recipe; everything else is fetched from its `feed_url` as RSS. Both
+    paths return the same Article objects, so everything downstream is identical.
+    """
+    scraper = scrape.SCRAPERS.get(source["slug"])
+    if scraper:
+        return scraper.parse(fetch(scraper.listing_url), source["id"])
+    return parse_feed(fetch(source["feed_url"]), source["id"])
+
+
 def ingest_source(source: dict, *, dry_run: bool) -> SourceResult:
     """Fetch, parse and store one source. Raises nothing — errors land in the result."""
     result = SourceResult(name=source["name_en"], dry_run=dry_run)
     try:
-        articles = parse_feed(fetch(source["feed_url"]), source["id"])
+        articles = _fetch_and_parse(source)
         result.found = len(articles)
 
         if dry_run:
@@ -89,23 +107,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No source with slug '{args.source}'.", file=sys.stderr)
         return 1
 
-    # Sources without a feed_url need an HTML scraper, which does not exist yet.
-    feed_sources = [s for s in sources if s.get("feed_url")]
-    skipped = [s["name_en"] for s in sources if not s.get("feed_url")]
-    if not feed_sources:
-        print("No sources with an RSS feed to ingest.", file=sys.stderr)
+    # A source is ingestable if it has an RSS feed or a registered scraper. Anything
+    # else is a source we cannot fetch yet (no feed, no scraper) — reported, not run.
+    ingestable = [s for s in sources if _is_ingestable(s)]
+    skipped = [s["name_en"] for s in sources if not _is_ingestable(s)]
+    if not ingestable:
+        print("No sources to ingest (none have a feed or a scraper).", file=sys.stderr)
         return 1
 
     if args.dry_run:
         print("DRY RUN — nothing will be written to the database.\n")
 
-    results = [ingest_source(s, dry_run=args.dry_run) for s in feed_sources]
+    results = [ingest_source(s, dry_run=args.dry_run) for s in ingestable]
 
     print("\nRun summary")
     for result in results:
         print(result.line())
     if skipped:
-        print(f"  Skipped (no RSS feed, needs a scraper): {', '.join(skipped)}")
+        print(f"  Skipped (no feed and no scraper yet): {', '.join(skipped)}")
 
     failed = [r for r in results if r.error]
     empty = [r for r in results if not r.error and r.found == 0]
