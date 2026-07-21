@@ -8,7 +8,13 @@ import time
 
 import httpx
 
-from pipeline.config import FETCH_RETRIES, FETCH_TIMEOUT_SECONDS, USER_AGENT
+from pipeline.config import DEFAULT_HEADERS, FETCH_RETRIES, FETCH_TIMEOUT_SECONDS
+
+# Statuses worth trying again. 429 and 5xx are the obvious ones. 403 is here because of
+# bot-protection WAFs: Imedi's DDoS-Guard answers an occasional request with a 403
+# challenge that clears on its own moments later, so treating it as a permanent refusal
+# threw away a whole source's run roughly once in four (PROGRESS.md).
+RETRYABLE_STATUSES = frozenset({403, 429})
 
 
 class FetchError(RuntimeError):
@@ -18,7 +24,7 @@ class FetchError(RuntimeError):
 def fetch(url: str, *, retries: int = FETCH_RETRIES) -> bytes:
     """GET `url` and return the raw body.
 
-    Retries with exponential backoff on network errors and 5xx/429 responses.
+    Retries with exponential backoff on network errors and retryable statuses.
     A 404 or other 4xx fails immediately — retrying won't fix it.
     """
     last_error: Exception | None = None
@@ -29,7 +35,7 @@ def fetch(url: str, *, retries: int = FETCH_RETRIES) -> bytes:
         try:
             response = httpx.get(
                 url,
-                headers={"User-Agent": USER_AGENT},
+                headers=DEFAULT_HEADERS,
                 timeout=FETCH_TIMEOUT_SECONDS,
                 follow_redirects=True,
             )
@@ -37,7 +43,7 @@ def fetch(url: str, *, retries: int = FETCH_RETRIES) -> bytes:
             last_error = exc
             continue
 
-        if response.status_code == 429 or response.status_code >= 500:
+        if response.status_code in RETRYABLE_STATUSES or response.status_code >= 500:
             last_error = FetchError(f"HTTP {response.status_code} from {url}")
             continue
         if response.status_code >= 400:

@@ -13,6 +13,19 @@ load_dotenv()
 # Identify ourselves honestly to the sites we fetch from, with a contact URL.
 USER_AGENT = "GroundNewsGeorgia/0.1 (+https://github.com/razmikb/georgian-news-analyses)"
 
+# Sent with every request. The User-Agent stays honest — we do not disguise ourselves as
+# a browser — but we do send the *other* headers a real browser sends. Bot-protection
+# filters (Imedi sits behind DDoS-Guard) score a request on how complete its header set
+# looks, and a request carrying nothing but a User-Agent is the tell that trips them.
+# Accept-Encoding is deliberately absent: httpx sets it from the decoders it actually has,
+# and advertising one we cannot decode (brotli) would break the response.
+DEFAULT_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ka-GE,ka;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 # How long to wait for a feed before giving up, and how many times to retry.
 FETCH_TIMEOUT_SECONDS = 20.0
 FETCH_RETRIES = 3
