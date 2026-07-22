@@ -8,7 +8,12 @@ import time
 
 import httpx
 
-from pipeline.config import DEFAULT_HEADERS, FETCH_RETRIES, FETCH_TIMEOUT_SECONDS
+from pipeline.config import (
+    DEFAULT_HEADERS,
+    FETCH_BACKOFF_SECONDS,
+    FETCH_RETRIES,
+    FETCH_TIMEOUT_SECONDS,
+)
 
 # Statuses worth trying again. 429 and 5xx are the obvious ones. 403 is here because of
 # bot-protection WAFs: Imedi's DDoS-Guard answers an occasional request with a 403
@@ -31,7 +36,8 @@ def fetch(url: str, *, retries: int = FETCH_RETRIES) -> bytes:
 
     for attempt in range(retries):
         if attempt:
-            time.sleep(2**attempt)  # 2s, 4s
+            # Last value repeats if FETCH_RETRIES is ever raised past the schedule.
+            time.sleep(FETCH_BACKOFF_SECONDS[min(attempt, len(FETCH_BACKOFF_SECONDS)) - 1])
         try:
             response = httpx.get(
                 url,

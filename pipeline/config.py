@@ -30,6 +30,13 @@ DEFAULT_HEADERS = {
 FETCH_TIMEOUT_SECONDS = 20.0
 FETCH_RETRIES = 3
 
+# How long to wait before each retry. Deliberately generous: the thing we retry most is
+# Imedi's bot filter, which scores us on how fast we knock. Three tries inside a few
+# seconds reads as a bot and re-earns the block; spacing them over three minutes reads as
+# a browser someone reloaded. Nothing waits on an ingest run — the cron is every 2 hours —
+# so patience here costs only Actions minutes, and the repo is public, where they are free.
+FETCH_BACKOFF_SECONDS = (60.0, 120.0)
+
 
 class MissingConfigError(RuntimeError):
     """Raised when a required environment variable is absent."""

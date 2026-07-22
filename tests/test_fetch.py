@@ -36,8 +36,10 @@ def calls(monkeypatch):
 
         monkeypatch.setattr(httpx, "get", fake_get)
 
-    monkeypatch.setattr(fetch_module.time, "sleep", lambda _seconds: None)
+    slept: list[float] = []
+    monkeypatch.setattr(fetch_module.time, "sleep", slept.append)
     install.made = made
+    install.slept = slept
     return install
 
 
@@ -57,6 +59,21 @@ def test_403_that_never_clears_fails_with_a_readable_error(calls):
         fetch("https://imedinews.ge/ge/archive")
     assert "403" in str(excinfo.value)
     assert len(calls.made) == 3
+
+
+def test_retries_are_spaced_minutes_apart(calls):
+    """The gap is the fix: knocking three times in seconds re-earns Imedi's block."""
+    calls([FakeResponse(403), FakeResponse(403), FakeResponse(403)])
+    with pytest.raises(FetchError):
+        fetch("https://imedinews.ge/ge/archive")
+    assert calls.slept == [60.0, 120.0]
+
+
+def test_first_attempt_does_not_wait(calls):
+    """The happy path — every source, every run — must stay instant."""
+    calls([FakeResponse(200, b"ok")])
+    fetch("https://example.ge/feed")
+    assert calls.slept == []
 
 
 def test_429_is_retried(calls):
