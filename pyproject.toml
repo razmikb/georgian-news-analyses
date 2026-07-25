@@ -9,6 +9,8 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "supabase>=2.15",
     "python-dotenv>=1.0",
+    "google-genai>=1.0",
+    "trafilatura>=1.12",
 ]
 
 [project.optional-dependencies]

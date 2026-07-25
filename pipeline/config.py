@@ -37,26 +37,69 @@ FETCH_RETRIES = 3
 # so patience here costs only Actions minutes, and the repo is public, where they are free.
 FETCH_BACKOFF_SECONDS = (60.0, 120.0)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Gemini embeddings
+# ─────────────────────────────────────────────────────────────────────────────
+# `text-embedding-004` (named in migration 0001's comment) was deprecated 2026-01-14.
+# `gemini-embedding-001` replaces it.
+EMBED_MODEL = "gemini-embedding-001"
+
+# The model's native size is 3072, but we ask for 768. That is a hard requirement, not
+# a leftover: pgvector's HNSW index refuses anything past 2000 dimensions, so a 3072-wide
+# vector could be stored but never searched — which is the only thing we want it for.
+# 768 is one of the model's recommended truncations and keeps `articles.embedding
+# vector(768)` unchanged.
+EMBED_DIMENSIONS = 768
+
+# What we are actually asking the model: "are these two texts about the same thing?"
+EMBED_TASK_TYPE = "SEMANTIC_SIMILARITY"
+
+# How many texts to send per API call. Keeps ~350 headlines to a handful of requests
+# instead of 350, which is what makes the free tier comfortable rather than tight.
+EMBED_BATCH_SIZE = 100
+
+# Backoff for Gemini quota errors (429). Longer than the HTTP schedule because a free-tier
+# per-minute quota clears by waiting out the minute, and there is never anything urgent
+# about an embedding — the run can always finish next time.
+EMBED_BACKOFF_SECONDS = (30.0, 90.0, 180.0)
+EMBED_RETRIES = 4
+
 
 class MissingConfigError(RuntimeError):
     """Raised when a required environment variable is absent."""
 
 
-def require(name: str) -> str:
-    """Return env var `name`, or fail with a message that says how to fix it."""
+def require(name: str, where: str) -> str:
+    """Return env var `name`, or fail with a message that says where to get it.
+
+    `where` matters more than it looks: the person running this is not a developer, so
+    "not set" alone is a dead end. The message has to name the page to click.
+    """
     value = os.environ.get(name)
     if not value:
         raise MissingConfigError(
-            f"{name} is not set. Copy .env.example to .env and fill in the value "
-            f"(Supabase → Project Settings → API)."
+            f"{name} is not set. Copy .env.example to .env and fill in the value ({where})."
         )
     return value
 
 
 def supabase_url() -> str:
-    return require("SUPABASE_URL")
+    return require("SUPABASE_URL", "Supabase → Project Settings → API")
 
 
 def supabase_service_role_key() -> str:
     """The write key. Pipeline only — never expose this to the frontend."""
-    return require("SUPABASE_SERVICE_ROLE_KEY")
+    return require("SUPABASE_SERVICE_ROLE_KEY", "Supabase → Project Settings → API")
+
+
+def gemini_api_key() -> str:
+    """Key for embeddings and event titles.
+
+    Create it in a *new* Google Cloud project rather than an existing one: Gemini's
+    free-tier rate limits are per project, so sharing a project with another app means
+    sharing one quota with it.
+    """
+    return require(
+        "GEMINI_API_KEY",
+        "https://aistudio.google.com/apikey → Create API key → Create in new project",
+    )

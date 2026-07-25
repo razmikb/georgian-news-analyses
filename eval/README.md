@@ -1,5 +1,11 @@
 # The eval set — how to label it
 
+> **Status: labelled 2026-07-25** — 15 same, 43 different, 2 unsure. The answer key lives in
+> **`labeled_pairs.csv`** and is the file everything downstream reads. `pairs_to_label.csv`
+> is just the generator's output and can be regenerated freely.
+>
+> Round 2 will reuse these instructions, so they are kept as written.
+
 `pairs_to_label.csv` is 60 pairs of real headlines from our own database. Your job is to
 say, for each pair, whether the two headlines are about **the same event** or not.
 
@@ -89,8 +95,19 @@ sample of Georgian news. It is deliberately dense with hard cases, so "we got 90
 the eval set" does not mean "90% right in production" — it's a tuning instrument, not a
 report card.
 
-To regenerate (this overwrites any labels — don't run it once labelling has started):
+To regenerate:
 
 ```
 python -m pipeline.eval_pairs
 ```
+
+This rewrites `pairs_to_label.csv` only. It **cannot** touch `labeled_pairs.csv` — that is
+why the finished labels were moved to a different filename. Don't undo that.
+
+## The rule we settled on
+
+Labelling forced a decision that is now a project rule (PLAN.md §6): **developments within one
+story are separate events.** Bail *requested* and bail *granted* are two events. This makes
+clusters tight on purpose — a coverage bar means little when "one event" spans three days —
+and it is why a story-timeline feature is on the backlog (PLAN.md §10.2). Label round 2 the
+same way.

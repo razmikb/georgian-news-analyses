@@ -12,6 +12,11 @@ DESIGN.md
 overall-goal.md
 .claude/
 
+# Local scratch cache — fetched article text and embedding vectors, kept only so
+# re-running an experiment doesn't re-fetch 120 pages. Article text must never be
+# committed (copyright, PLAN.md §9), so this line is load-bearing, not tidiness.
+.cache/
+
 # Python
 __pycache__/
 *.pyc
