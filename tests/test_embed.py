@@ -15,6 +15,7 @@ from pipeline import cache, embed
 @pytest.fixture(autouse=True)
 def temp_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_ROOT", tmp_path / "cache")
+    embed.reset_pace()
 
 
 class FakeEmbedding:
@@ -35,11 +36,15 @@ def stub_api(monkeypatch):
     """
     batches: list[list[str]] = []
 
-    def install(vector_for, *, fail_times=0, error=None, drop_results=False):
+    def install(vector_for, *, fail_times=0, error=None, drop_results=False, max_chars=None):
+        """`max_chars` imitates the real refusal we hit: too much text in one request
+        is rejected however long you wait, and only a smaller request gets through."""
         state = {"failures": fail_times}
 
         def fake_embed_content(*, model, contents, config):
             batches.append(list(contents))
+            if max_chars is not None and sum(len(t) for t in contents) > max_chars:
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
             if state["failures"] > 0:
                 state["failures"] -= 1
                 raise error or RuntimeError("429 RESOURCE_EXHAUSTED")
@@ -109,6 +114,79 @@ def test_large_input_is_split_into_batches(stub_api, monkeypatch):
     texts = [f"headline {i}" for i in range(7)]
     assert len(embed.embed_texts(texts)) == 7
     assert [len(b) for b in stub_api.batches] == [3, 3, 1]
+
+
+def test_batches_are_capped_by_characters_not_just_count(stub_api, monkeypatch):
+    """The bug this guards: 100 headlines and 100 article bodies are the same "batch of
+    100" but differ fourteen-fold in payload, and the big one comes back 429."""
+    monkeypatch.setattr(embed, "EMBED_BATCH_CHARS", 100)
+    stub_api(lambda t: [1.0, float(len(t))])
+    texts = [f"{i}{'ა' * 39}" for i in range(6)]  # 40 chars each → 2 per request
+    assert len(embed.embed_texts(texts)) == 6
+    assert [len(b) for b in stub_api.batches] == [2, 2, 2]
+
+
+def test_one_oversized_text_still_goes_out_alone(stub_api, monkeypatch):
+    """Splitting a single article's text would change what is being measured."""
+    monkeypatch.setattr(embed, "EMBED_BATCH_CHARS", 10)
+    stub_api(lambda t: [1.0, float(len(t))])
+    assert len(embed.embed_texts(["ა" * 500])) == 1
+    assert [len(b) for b in stub_api.batches] == [1]
+
+
+def test_a_refused_batch_is_halved_rather_than_abandoned(stub_api, monkeypatch):
+    """A 429 does not say whether to wait or to send less. Waiting is tried first; when
+    the same request is refused twice, the batch is halved until it fits."""
+    monkeypatch.setattr(embed, "EMBED_BATCH_CHARS", 10_000)
+    stub_api(lambda t: [1.0, float(len(t))], max_chars=250)
+    texts = [f"{i}{'ა' * 99}" for i in range(8)]  # 800 chars — over the stub's limit
+    assert len(embed.embed_texts(texts)) == 8
+    assert min(len(b) for b in stub_api.batches) <= 2
+    assert any(sum(len(t) for t in b) <= 250 for b in stub_api.batches)
+
+
+def test_halving_a_batch_keeps_results_matched_to_their_text(stub_api, monkeypatch):
+    """Splitting mid-run must not shuffle results — misalignment scores every pair
+    against the wrong partner and shows up as plausible nonsense, never as an error."""
+    monkeypatch.setattr(embed, "EMBED_BATCH_CHARS", 10_000)
+    stub_api(lambda t: [float(len(t)), 1.0], max_chars=250)
+    texts = [f"{i}{'ა' * (i + 20)}" for i in range(8)]
+    vectors = embed.embed_texts(texts)
+    for text, vector in zip(texts, vectors, strict=True):
+        assert vector == pytest.approx(embed.normalize([float(len(text)), 1.0]))
+
+
+def test_a_single_text_refused_forever_is_not_split_endlessly(stub_api, monkeypatch):
+    """Nothing left to shrink. It has to give up with a readable error, not recurse."""
+    monkeypatch.setattr(embed, "EMBED_BATCH_CHARS", 10_000)
+    stub_api(lambda t: [1.0], max_chars=1)
+    with pytest.raises(embed.EmbedError) as excinfo:
+        embed.embed_texts(["ა" * 50])
+    assert "quota" in str(excinfo.value).lower()
+
+
+# --- Pacing ----------------------------------------------------------------------
+
+
+def test_the_first_request_is_never_delayed(monkeypatch):
+    """Pacing must not tax a run that has sent nothing yet."""
+    slept = []
+    monkeypatch.setattr(embed.time, "sleep", slept.append)
+    embed.reset_pace()
+    embed._await_pace()
+    assert slept == []
+
+
+def test_more_text_earns_a_longer_wait(monkeypatch):
+    """The gap is proportional to what was just sent, so bodies pace themselves slower
+    than headlines without needing a separate setting."""
+    slept = []
+    monkeypatch.setattr(embed.time, "sleep", slept.append)
+    monkeypatch.setattr(embed, "EMBED_CHARS_PER_MINUTE", 6_000)
+    embed.reset_pace()
+    embed._charge_pace(6_000)
+    embed._await_pace()
+    assert slept and slept[0] == pytest.approx(60.0, abs=1.0)
 
 
 def test_duplicate_texts_cost_one_api_slot(stub_api):

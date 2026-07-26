@@ -82,9 +82,7 @@ def score_at(scored: list[Scored], threshold: float) -> tuple[float, float, floa
     false_positives = sum(d >= threshold for d in different)
     precision = true_positives / (true_positives + false_positives) if true_positives else 0.0
     recall = true_positives / len(same) if same else 0.0
-    f1 = (
-        2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-    )
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
     return precision, recall, f1
 
 

@@ -54,15 +54,32 @@ EMBED_DIMENSIONS = 768
 # What we are actually asking the model: "are these two texts about the same thing?"
 EMBED_TASK_TYPE = "SEMANTIC_SIMILARITY"
 
-# How many texts to send per API call. Keeps ~350 headlines to a handful of requests
-# instead of 350, which is what makes the free tier comfortable rather than tight.
+# How much to put in one API call. Two ceilings, and the *character* one is the one that
+# matters — measured 2026-07-26, when batching by count alone got the measurement run
+# refused. 100 headlines is ~12,000 characters; 100 article bodies is ~174,000. Counting
+# texts, those are the same "batch of 100"; in payload they differ fourteen-fold, and the
+# big one comes back 429. So a request is capped by size first and count second.
+EMBED_BATCH_CHARS = 10_000
 EMBED_BATCH_SIZE = 100
+
+# A self-imposed throughput ceiling, because Gemini's free-tier per-minute allowance is
+# real but no longer published (the docs now say "see AI Studio"). This sits well under
+# where we actually saw a refusal: ~62,000 characters in two back-to-back requests.
+# Characters stand in for tokens — the ratio for Georgian is unknown, but a ceiling only
+# has to be safely low, not accurate. Raise it if runs feel slow and stay green.
+EMBED_CHARS_PER_MINUTE = 25_000
 
 # Backoff for Gemini quota errors (429). Longer than the HTTP schedule because a free-tier
 # per-minute quota clears by waiting out the minute, and there is never anything urgent
 # about an embedding — the run can always finish next time.
 EMBED_BACKOFF_SECONDS = (30.0, 90.0, 180.0)
 EMBED_RETRIES = 4
+
+# Quota refusals have two different causes needing opposite responses: waiting fixes a
+# per-minute allowance, only sending less fixes a request too big to ever be allowed.
+# Google's 429 names neither, so we test the cheaper explanation first — one wait — and
+# if the identical request is refused twice, waiting is not the answer and we halve it.
+EMBED_SPLIT_AFTER_FAILURES = 2
 
 
 class MissingConfigError(RuntimeError):

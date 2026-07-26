@@ -190,7 +190,9 @@ def test_page_with_no_prose_returns_none(stub_fetch):
 
 
 def test_text_too_short_to_be_an_article_is_rejected(stub_fetch):
-    stub_fetch(b"<html><body><article><p>\xe1\x83\x93\xe1\x83\x93\xe1\x83\x93</p></article></body></html>")
+    stub_fetch(
+        b"<html><body><article><p>\xe1\x83\x93\xe1\x83\x93\xe1\x83\x93</p></article></body></html>"
+    )
     assert extract.article_text("https://on.ge/story/2") is None
 
 

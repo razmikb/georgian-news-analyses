@@ -126,9 +126,7 @@ def test_band_spans_the_overlap_when_classes_mix():
 
 
 def test_band_ignores_unsure_rows():
-    low, high, _ = ambiguous_band(
-        scored(("same", 0.9), ("different", 0.3), ("unsure", 0.99))
-    )
+    low, high, _ = ambiguous_band(scored(("same", 0.9), ("different", 0.3), ("unsure", 0.99)))
     assert (low, high) == (0.3, 0.9)
 
 
@@ -151,9 +149,7 @@ def test_share_in_band_of_nothing_is_zero():
 
 
 def test_worst_misses_surfaces_the_closest_calls():
-    result = scored(
-        ("different", 0.88), ("different", 0.1), ("same", 0.95), ("same", 0.32)
-    )
+    result = scored(("different", 0.88), ("different", 0.1), ("same", 0.95), ("same", 0.32))
     false_alarms, misses = worst_misses(result, count=1)
     assert [s.score for s in false_alarms] == [0.88]
     assert [s.score for s in misses] == [0.32]
